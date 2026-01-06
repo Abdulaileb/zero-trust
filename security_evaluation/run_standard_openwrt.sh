@@ -26,7 +26,7 @@ qemu-system-x86_64 \
   -netdev tap,id=wan,ifname=tap-std-wan,script=no,downscript=no \
   -device virtio-net-pci,netdev=wan,mac=52:54:00:10:00:01 \
   -netdev tap,id=lan,ifname=tap-std-lan,script=no,downscript=no \
-  -device virtio-net-pci,netdev=lan,mac=52:54:00:10:00:02 \
+  -device virtio-net-pci,netdev=lan,mac=52:54:00:10:00:02
 
 # Cleanup on exit
 ip link delete tap-std-wan 2>/dev/null
