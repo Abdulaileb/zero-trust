@@ -1,5 +1,9 @@
 #!/bin/sh
 
+##adding dry run mode for testing without applying changes
+DRY_RUN=false
+
+
 # --- LOGGING & HELPERS ---
 log_msg() {
     logger -t "zero_trust_setup" "$1"
@@ -72,18 +76,36 @@ echo -e "$PASS\n$PASS" | passwd root >/dev/null 2>&1
 
 ##Hardware switch transaltion (DSA - Distributed Switch Architecture)
 ## I remove lan4 from the br-lan and assign it to eth0.99 (VLAN 99)
-uci del_list network.@device[0].ports='lan4'
+if [ -d "/sys/class/net/lan4" ]; then
+    # DSA switch detected
+    log_msg "Configuring DSA switch for management VLAN..."
+
+    # Remove lan4 from br-lan
+    #[ "$DRY_RUN" = "true" ] && echo "uci del_list network.lan.ports='lan4'" ||
+    uci del_list network.@device[0].ports='lan4'
+
+    uci set network.device_mgmt=device
+    uci set network.device_mgmt.name='br-mgmt'
+    uci set network.device_mgmt.type='bridge'
+    uci add_list network.device_mgmt.ports='lan4'
+    uci set network.mgmt.device='br-mgmt'
+else
+    log_msg "No DSA switch detected, skipping switch config."
+
+    uci set.network.mgmt.device='eth0.99'
+fi
+
+
+# Then wrap your uci commands like this:
+#[ "$DRY_RUN" = "true" ] && echo "uci set network.mgmt.device='br-mgmt'" || uci set network.mgmt.device='br-mgmt'
 
 ## Create a new bridge for management VLAN
-uci set network.device_mgmt=device
-uci set network.device_mgmt.name='br-mgmt'
-uci set network.device_mgmt.type='bridge'
-uci add_list network.device_mgmt.ports='lan4'
+
 
 # Management interface on VLAN 99 (eth1.99)
 uci set network.mgmt=interface
 uci set network.mgmt.proto='static'
-uci set network.mgmt.device='br-mgmt'
+# uci set network.mgmt.device='br-mgmt'
 uci set network.mgmt.ipaddr='192.168.99.1'
 uci set network.mgmt.netmask='255.255.255.0'
 
