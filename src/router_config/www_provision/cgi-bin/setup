@@ -68,20 +68,32 @@ echo "$USER:$HASH" > /etc/config/zero_trust_credentials
 chmod 600 /etc/config/zero_trust_credentials
 echo -e "$PASS\n$PASS" | passwd root >/dev/null 2>&1
 
+### For management 
+
+##Hardware switch transaltion (DSA - Distributed Switch Architecture)
+## I remove lan4 from the br-lan and assign it to eth0.99 (VLAN 99)
+uci del_list network.@device[0].ports='lan4'
+
+## Create a new bridge for management VLAN
+uci set network.device_mgmt=device
+uci set network.device_mgmt.name='br-mgmt'
+uci set network.device_mgmt.type='bridge'
+uci add_list network.device_mgmt.ports='lan4'
+
 # Management interface on VLAN 99 (eth1.99)
 uci set network.mgmt=interface
 uci set network.mgmt.proto='static'
-uci set network.mgmt.device='eth0.99'
+uci set network.mgmt.device='br-mgmt'
 uci set network.mgmt.ipaddr='192.168.99.1'
 uci set network.mgmt.netmask='255.255.255.0'
-uci add_list firewall.@zone[0].network='mgmt'
 
-# Move Web Server to new IP + root
+#firewall and the webserver access
+uci add_list firewall.@zone[0].network='mgmt'
 uci delete uhttpd.main.listen_http 2>/dev/null
 uci add_list uhttpd.main.listen_http='192.168.99.1:80'
 uci set uhttpd.main.home='/www'
 
-# Mark as complete
+# Mark as complete and commit changes
 touch /etc/config/zero_trust_complete
 chmod 444 /etc/config/zero_trust_complete
 uci commit
