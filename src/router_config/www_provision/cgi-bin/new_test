@@ -1,0 +1,711 @@
+#!/bin/sh
+#
+# Zero-Trust Boot Protocol - Setup Handler
+# File: /www_provision/cgi-bin/setup
+# Purpose: Processes initial provisioning and transitions router to trusted state
+# Author: Abdulai Tamba Lebbie
+# University of Klagenfurt - M.Sc. Cybersecurity & AI
+#
+
+# =============================================================================
+# CONFIGURATION
+# =============================================================================
+
+FLAG_FILE="/etc/config/zero_trust_complete"
+CRED_FILE="/etc/config/zero_trust_credentials"
+LOG_FILE="/tmp/zero_trust_setup.log"
+
+# Argon2 parameters (OWASP recommended for embedded systems)
+ARGON2_TIME_COST=2
+ARGON2_MEMORY_COST=16384  # 16MB (reduced for router hardware)
+ARGON2_PARALLELISM=2
+ARGON2_SALT_SIZE=16
+
+# Network configuration
+MGMT_VLAN_ID=99
+MGMT_IP="192.168.99.1"
+MGMT_NETMASK="255.255.255.0"
+MGMT_PORT="lan4"  # Physical port for management (adjust for your hardware)
+
+# Testing mode (set to true to enable dry-run)
+DRY_RUN=false
+
+# =============================================================================
+# LOGGING & UTILITY FUNCTIONS
+# =============================================================================
+
+log_msg() {
+    local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+    local level="${2:-INFO}"
+    echo "[$timestamp] [$level] $1" >> "$LOG_FILE"
+    logger -t "zero_trust_setup" -p "user.$level" "$1"
+}
+
+log_error() {
+    log_msg "$1" "ERROR"
+}
+
+log_warning() {
+    log_msg "$1" "WARNING"
+}
+
+urldecode() {
+    local str="$1"
+    str="$(echo "$str" | sed 's/+/ /g')"
+    str="$(echo "$str" | sed 's/%\([0-9A-Fa-f][0-9A-Fa-f]\)/\\x\1/g')"
+    printf '%b' "$str"
+}
+
+send_error_page() {
+    local error_title="$1"
+    local error_message="$2"
+    local show_retry="${3:-true}"
+    
+    log_error "$error_title: $error_message"
+    
+    cat << EOF
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Setup Error</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    background: linear-gradient(135deg, #dc2626 0%, #991b1b 100%);
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+  .card {
+    background: #ffffff;
+    border-radius: 16px;
+    padding: 40px;
+    max-width: 500px;
+    width: 100%;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+    text-align: center;
+  }
+  h1 { color: #dc2626; margin-bottom: 15px; font-size: 24px; }
+  p { color: #374151; line-height: 1.6; margin-bottom: 20px; }
+  .button {
+    display: inline-block;
+    padding: 12px 24px;
+    background: #dc2626;
+    color: white;
+    text-decoration: none;
+    border-radius: 8px;
+    font-weight: 500;
+  }
+  .button:hover { background: #b91c1c; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1>❌ $error_title</h1>
+    <p>$error_message</p>
+EOF
+    
+    if [ "$show_retry" = "true" ]; then
+        echo '<a href="/" class="button">Try Again</a>'
+    fi
+    
+    cat << EOF
+  </div>
+</body>
+</html>
+EOF
+    exit 1
+}
+
+# =============================================================================
+# VALIDATION FUNCTIONS
+# =============================================================================
+
+validate_environment() {
+    log_msg "Validating environment..."
+    
+    # Check if already configured
+    if [ -f "$FLAG_FILE" ]; then
+        send_error_page "Already Configured" \
+            "This router has already been provisioned. Factory reset is required to re-configure." \
+            "false"
+    fi
+    
+    # Check Python availability
+    if ! command -v python3 >/dev/null 2>&1; then
+        log_error "Python3 not found"
+        send_error_page "System Error" \
+            "Python3 is required but not installed. Please check your OpenWrt configuration."
+    fi
+    
+    # Check passlib availability
+    if ! python3 -c "from passlib.hash import argon2" 2>/dev/null; then
+        log_error "passlib not available"
+        send_error_page "System Error" \
+            "Passlib library is required but not installed. Run: pip3 install passlib argon2-cffi"
+    fi
+    
+    log_msg "Environment validation passed"
+}
+
+validate_credentials() {
+    local username="$1"
+    local password="$2"
+    
+    log_msg "Validating credentials..."
+    
+    # Username validation
+    if [ ${#username} -lt 3 ]; then
+        send_error_page "Invalid Username" \
+            "Username must be at least 3 characters long."
+    fi
+    
+    if [ ${#username} -gt 32 ]; then
+        send_error_page "Invalid Username" \
+            "Username must not exceed 32 characters."
+    fi
+    
+    if ! echo "$username" | grep -qE '^[a-zA-Z0-9_-]+$'; then
+        send_error_page "Invalid Username" \
+            "Username can only contain letters, numbers, hyphens, and underscores."
+    fi
+    
+    # Password validation
+    if [ ${#password} -lt 12 ]; then
+        send_error_page "Weak Password" \
+            "Password must be at least 12 characters long."
+    fi
+    
+    if [ ${#password} -gt 128 ]; then
+        send_error_page "Invalid Password" \
+            "Password must not exceed 128 characters."
+    fi
+    
+    # Check character complexity
+    local has_lower=$(echo "$password" | grep -q '[a-z]' && echo 1 || echo 0)
+    local has_upper=$(echo "$password" | grep -q '[A-Z]' && echo 1 || echo 0)
+    local has_digit=$(echo "$password" | grep -q '[0-9]' && echo 1 || echo 0)
+    local has_special=$(echo "$password" | grep -q '[^a-zA-Z0-9]' && echo 1 || echo 0)
+    
+    local complexity=$((has_lower + has_upper + has_digit + has_special))
+    
+    if [ $complexity -lt 3 ]; then
+        send_error_page "Weak Password" \
+            "Password must contain at least 3 of: lowercase letters, uppercase letters, digits, special characters."
+    fi
+    
+    log_msg "Credential validation passed (username: $username, complexity: $complexity/4)"
+}
+
+# =============================================================================
+# CORE FUNCTIONS
+# =============================================================================
+
+hash_password() {
+    local password="$1"
+    
+    log_msg "Generating Argon2id hash..."
+    
+    local hash_result=$(python3 << PYEOF
+from passlib.hash import argon2
+import sys
+
+try:
+    password = """$password"""
+    hash_result = argon2.using(
+        type='id',
+        time_cost=$ARGON2_TIME_COST,
+        memory_cost=$ARGON2_MEMORY_COST,
+        parallelism=$ARGON2_PARALLELISM,
+        salt_size=$ARGON2_SALT_SIZE
+    ).hash(password)
+    print(hash_result)
+    sys.exit(0)
+except Exception as e:
+    print(f"ERROR: {str(e)}", file=sys.stderr)
+    sys.exit(1)
+PYEOF
+)
+    
+    if [ $? -ne 0 ] || [ -z "$hash_result" ]; then
+        log_error "Password hashing failed"
+        send_error_page "Cryptographic Error" \
+            "Failed to hash password. Please check system logs."
+    fi
+    
+    log_msg "Argon2id hash generated successfully (length: ${#hash_result})"
+    echo "$hash_result"
+}
+
+save_credentials() {
+    local username="$1"
+    local hash="$2"
+    local password="$3"
+    
+    log_msg "Saving credentials to secure storage..."
+    
+    # Save to custom database
+    if [ "$DRY_RUN" = "false" ]; then
+        echo "$username:$hash" > "$CRED_FILE"
+        chmod 600 "$CRED_FILE"
+        chown root:root "$CRED_FILE"
+        
+        # Also set system root password (fallback for SSH)
+        echo -e "$password\n$password" | passwd root >/dev/null 2>&1
+        
+        if [ $? -eq 0 ]; then
+            log_msg "Credentials saved successfully"
+        else
+            log_warning "Failed to update system root password"
+        fi
+    else
+        log_msg "[DRY-RUN] Would save credentials: $username:$hash"
+    fi
+}
+
+detect_switch_architecture() {
+    # Detect router switch type
+    # Returns: "dsa", "swconfig", or "vm"
+    
+    if [ -d "/sys/class/net/lan1" ] || [ -d "/sys/class/net/lan4" ]; then
+        echo "dsa"
+    elif [ -f "/sys/class/net/eth0/device/switch0/ports" ] || \
+         [ -d "/sys/class/net/eth0.1" ] || \
+         [ -d "/sys/class/net/eth0.2" ]; then
+        echo "swconfig"
+    else
+        echo "vm"
+    fi
+}
+
+configure_management_network() {
+    log_msg "Configuring management VLAN..."
+    
+    # Detect hardware architecture
+    local arch=$(detect_switch_architecture)
+    log_msg "Detected architecture: $arch"
+    
+    local mgmt_device=""
+    
+    if [ "$DRY_RUN" = "false" ]; then
+        case "$arch" in
+            dsa)
+                # DSA: Use physical port isolation
+                log_msg "DSA detected: Isolating physical port $MGMT_PORT"
+                
+                # Remove port from default bridge
+                uci del_list network.@device[0].ports="$MGMT_PORT" 2>/dev/null
+                
+                # Create management bridge
+                uci set network.device_mgmt=device
+                uci set network.device_mgmt.name='br-mgmt'
+                uci set network.device_mgmt.type='bridge'
+                uci add_list network.device_mgmt.ports="$MGMT_PORT"
+                
+                mgmt_device='br-mgmt'
+                ;;
+                
+            swconfig)
+                # swconfig: Use VLAN tagging on eth0
+                log_msg "swconfig detected: Using VLAN $MGMT_VLAN_ID on eth0"
+                
+                # Note: eth0.$MGMT_VLAN_ID will be auto-created by netifd
+                # We just configure the interface, OpenWrt handles VLAN creation
+                mgmt_device="eth0.$MGMT_VLAN_ID"
+                
+                # Optional: Configure switch VLAN explicitly (not always needed)
+                # Most swconfig routers auto-create VLANs via netifd
+                ;;
+                
+            vm)
+                # Virtual machine: Use eth1.99 or create VLAN on second interface
+                log_msg "VM/Virtual environment detected"
+                
+                # Check if eth1 exists (common in VMs with 2 NICs)
+                if [ -d "/sys/class/net/eth1" ]; then
+                    mgmt_device="eth1.$MGMT_VLAN_ID"
+                    log_msg "Using eth1.$MGMT_VLAN_ID for management"
+                else
+                    # Fallback: Use eth0 with VLAN
+                    mgmt_device="eth0.$MGMT_VLAN_ID"
+                    log_msg "Using eth0.$MGMT_VLAN_ID for management"
+                fi
+                ;;
+                
+            *)
+                log_error "Unknown architecture detected"
+                mgmt_device="eth0.$MGMT_VLAN_ID"
+                log_warning "Falling back to eth0.$MGMT_VLAN_ID"
+                ;;
+        esac
+        
+        # Create management interface (same for all architectures)
+        log_msg "Creating management interface on $mgmt_device..."
+        uci set network.mgmt=interface
+        uci set network.mgmt.proto='static'
+        uci set network.mgmt.device="$mgmt_device"
+        uci set network.mgmt.ipaddr="$MGMT_IP"
+        uci set network.mgmt.netmask="$MGMT_NETMASK"
+        
+        # Add to firewall LAN zone (allows local access)
+        log_msg "Adding management interface to firewall..."
+        uci add_list firewall.@zone[0].network='mgmt'
+        
+        # Reconfigure web server to ONLY listen on management IP
+        log_msg "Reconfiguring web server to management IP only..."
+        uci delete uhttpd.main.listen_http 2>/dev/null
+        uci delete uhttpd.main.listen_https 2>/dev/null
+        uci add_list uhttpd.main.listen_http="$MGMT_IP:80"
+        uci set uhttpd.main.home='/www'
+        
+        # Optional: Disable dropbear on standard LAN (SSH only on mgmt)
+        # Uncomment if you want SSH ONLY on management VLAN:
+        # uci set dropbear.@dropbear[0].Interface='mgmt'
+        
+        # Commit all changes
+        log_msg "Committing configuration..."
+        uci commit network
+        uci commit firewall
+        uci commit uhttpd
+        
+        log_msg "Management network configured successfully on $mgmt_device"
+        
+    else
+        log_msg "[DRY-RUN] Architecture: $arch"
+        log_msg "[DRY-RUN] Would configure management on VLAN $MGMT_VLAN_ID"
+        log_msg "[DRY-RUN] Would set management IP: $MGMT_IP"
+        log_msg "[DRY-RUN] Would reconfigure web server to $MGMT_IP:80"
+    fi
+}
+
+create_completion_flag() {
+    log_msg "Creating completion flag..."
+    
+    if [ "$DRY_RUN" = "false" ]; then
+        touch "$FLAG_FILE"
+        chmod 444 "$FLAG_FILE"
+        chown root:root "$FLAG_FILE"
+        log_msg "Completion flag created: $FLAG_FILE"
+    else
+        log_msg "[DRY-RUN] Would create flag: $FLAG_FILE"
+    fi
+}
+
+apply_changes() {
+    log_msg "Applying network changes..."
+    
+    if [ "$DRY_RUN" = "false" ]; then
+        # Apply changes in background to allow response to complete
+        (
+            sleep 2
+            log_msg "Bringing up management interface..."
+            ifup mgmt 2>&1 | tee -a "$LOG_FILE"
+            
+            sleep 1
+            log_msg "Restarting web server..."
+            /etc/init.d/uhttpd restart 2>&1 | tee -a "$LOG_FILE"
+            
+            log_msg "Configuration applied successfully"
+        ) &
+    else
+        log_msg "[DRY-RUN] Would apply network changes in background"
+    fi
+}
+
+send_success_page() {
+    local username="$1"
+    
+    log_msg "Sending success response to user"
+    
+    cat << 'EOF'
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Setup Complete</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    background: linear-gradient(135deg, #6366f1 0%, #7c3aed 100%);
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+  .card {
+    background: #ffffff;
+    border-radius: 16px;
+    padding: 40px;
+    max-width: 640px;
+    width: 100%;
+    box-shadow: 0 20px 60px rgba(15, 23, 42, 0.35);
+  }
+  h1 {
+    color: #16a34a;
+    text-align: center;
+    margin-bottom: 10px;
+    font-size: 28px;
+  }
+  .subtitle {
+    text-align: center;
+    font-size: 15px;
+    color: #6b7280;
+    margin-bottom: 30px;
+  }
+  .username {
+    color: #6366f1;
+    font-weight: 600;
+  }
+  .section {
+    margin-bottom: 25px;
+  }
+  .section-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: #111827;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .step-box {
+    background: #f9fafb;
+    padding: 15px;
+    border-radius: 8px;
+    border-left: 4px solid #6366f1;
+    margin-top: 10px;
+  }
+  .step-label {
+    font-weight: 600;
+    color: #374151;
+    margin-bottom: 8px;
+  }
+  .step-content {
+    font-size: 14px;
+    color: #6b7280;
+    line-height: 1.6;
+  }
+  .config-line {
+    font-family: 'Monaco', 'Courier New', monospace;
+    background: #1f2937;
+    color: #10b981;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 13px;
+    margin: 4px 0;
+    display: inline-block;
+  }
+  .alert {
+    background: #fef3c7;
+    border-left: 4px solid #f59e0b;
+    padding: 15px;
+    border-radius: 8px;
+    margin: 20px 0;
+  }
+  .alert-title {
+    font-weight: 600;
+    color: #92400e;
+    margin-bottom: 5px;
+  }
+  .alert-text {
+    font-size: 14px;
+    color: #78350f;
+    line-height: 1.5;
+  }
+  .timer {
+    text-align: center;
+    margin-top: 25px;
+    font-size: 14px;
+    color: #6b7280;
+  }
+  .countdown {
+    font-weight: 600;
+    color: #6366f1;
+  }
+  .button {
+    display: block;
+    margin: 25px auto 0;
+    padding: 14px 28px;
+    max-width: 280px;
+    text-align: center;
+    background: #6366f1;
+    color: #ffffff;
+    text-decoration: none;
+    border-radius: 8px;
+    font-size: 15px;
+    font-weight: 600;
+    transition: background 0.2s;
+  }
+  .button:hover {
+    background: #4f46e5;
+  }
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1>✓ Setup Complete</h1>
+    <p class="subtitle">
+      User <span class="username">
+EOF
+    echo "$username"
+    cat << 'EOF'
+</span> created successfully.<br>
+      Zero-trust boot protocol is now active.
+    </p>
+
+    <div class="section">
+      <div class="section-title">
+        <span>🔧</span> Network Configuration Changed
+      </div>
+      <div class="step-box">
+        <div class="step-label">Management Access Moved</div>
+        <div class="step-content">
+          The management interface has been isolated to a dedicated network segment
+          for enhanced security. Standard LAN devices can no longer access router
+          configuration.
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">
+        <span>🖥️</span> Connect to Management Console
+      </div>
+      <div class="step-box">
+        <div class="step-label">Configure Your Device</div>
+        <div class="step-content">
+          To access the management interface, configure your device with:<br><br>
+          <strong>IP Address:</strong> <span class="config-line">192.168.99.5</span><br>
+          <strong>Subnet Mask:</strong> <span class="config-line">255.255.255.0</span><br>
+          <strong>Gateway:</strong> <span class="config-line">192.168.99.1</span><br>
+          <strong>DNS:</strong> <span class="config-line">192.168.99.1</span><br><br>
+          Then navigate to: <strong>http://192.168.99.1</strong>
+        </div>
+      </div>
+    </div>
+
+    <div class="alert">
+      <div class="alert-title">⚠️ Expected Disconnection</div>
+      <div class="alert-text">
+        Your current connection to <strong>192.168.2.1</strong> will be
+        interrupted as the router switches to the management network. This is
+        normal. Reconnect using the configuration above.
+      </div>
+    </div>
+
+    <div class="timer">
+      Redirecting to <span class="config-line">http://192.168.99.1</span> in
+      <span class="countdown" id="countdown">15</span> seconds
+    </div>
+
+    <a href="http://192.168.99.1" class="button">
+      Continue to Management Console →
+    </a>
+  </div>
+
+<script>
+(function() {
+  var remaining = 15;
+  var countdownEl = document.getElementById('countdown');
+  var targetUrl = 'http://192.168.99.1';
+
+  function tick() {
+    remaining--;
+    if (countdownEl) {
+      countdownEl.textContent = remaining;
+    }
+    if (remaining <= 0) {
+      window.location.href = targetUrl;
+      return;
+    }
+    setTimeout(tick, 1000);
+  }
+
+  setTimeout(tick, 1000);
+})();
+</script>
+
+</body>
+</html>
+EOF
+}
+
+# =============================================================================
+# MAIN EXECUTION
+# =============================================================================
+
+main() {
+    # Send HTTP headers
+    echo "Content-Type: text/html; charset=utf-8"
+    echo ""
+    
+    log_msg "========================================="
+    log_msg "Zero-Trust Setup Handler Started"
+    log_msg "========================================="
+    
+    # Step 1: Validate environment
+    validate_environment
+    
+    # Step 2: Parse POST data
+    if [ -n "$CONTENT_LENGTH" ]; then
+        POST_DATA=$(dd bs=1 count=$CONTENT_LENGTH 2>/dev/null)
+    else
+        POST_DATA=$(cat)
+    fi
+    
+    if [ -z "$POST_DATA" ]; then
+        send_error_page "Invalid Request" \
+            "No POST data received. Please use the provisioning form."
+    fi
+    
+    log_msg "Received POST data (length: ${#POST_DATA} bytes)"
+    
+    # Step 3: Extract and decode credentials
+    RAW_USER=$(echo "$POST_DATA" | sed -n 's/^.*username=\([^&]*\).*$/\1/p')
+    RAW_PASS=$(echo "$POST_DATA" | sed -n 's/^.*password=\([^&]*\).*$/\1/p')
+    
+    USER=$(urldecode "$RAW_USER")
+    PASS=$(urldecode "$RAW_PASS")
+    
+    if [ -z "$USER" ] || [ -z "$PASS" ]; then
+        send_error_page "Missing Credentials" \
+            "Both username and password are required."
+    fi
+    
+    # Step 4: Validate credentials
+    validate_credentials "$USER" "$PASS"
+    
+    # Step 5: Hash password
+    HASH=$(hash_password "$PASS")
+    
+    # Step 6: Save credentials
+    save_credentials "$USER" "$HASH" "$PASS"
+    
+    # Step 7: Configure network
+    configure_management_network
+    
+    # Step 8: Create completion flag
+    create_completion_flag
+    
+    # Step 9: Send success page
+    send_success_page "$USER"
+    
+    # Step 10: Apply changes in background
+    apply_changes
+    
+    log_msg "Setup completed successfully"
+    log_msg "========================================="
+    
+    exit 0
+}
+
+# Execute main function
+main
