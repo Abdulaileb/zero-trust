@@ -1,0 +1,347 @@
+#!/bin/sh
+#
+# Zero-Trust Boot Protocol - Factory Reset
+# Returns router to clean State 0 (factory/untrusted state)
+#
+
+LOG_FILE="/tmp/zero_trust_factory_reset.log"
+
+log() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >> "$LOG_FILE"
+    logger -t "zero_trust_reset" "$1"
+}
+
+echo "Content-Type: text/html; charset=utf-8"
+echo ""
+
+log "========================================="
+log "FACTORY RESET INITIATED FROM WEB UI"
+log "========================================="
+
+# =============================================================================
+# STEP 1: Remove Zero-Trust State Files
+# =============================================================================
+
+log "Removing zero-trust state markers..."
+
+rm -f /etc/config/zero_trust_complete
+rm -f /etc/config/zero_trust_credentials
+rm -f /tmp/zero_trust_*.log
+
+log "State files removed"
+
+# =============================================================================
+# STEP 2: Reset Network Configuration
+# =============================================================================
+
+log "Resetting network configuration..."
+
+# Remove management VLAN interface
+uci delete network.mgmt 2>/dev/null
+
+# Remove management DHCP
+uci delete dhcp.mgmt 2>/dev/null
+
+# Remove switch VLAN 99 (if exists)
+# Find and delete VLAN 99 entries
+VLAN_COUNT=$(uci show network | grep "switch_vlan" | grep "vlan='99'" | wc -l)
+if [ "$VLAN_COUNT" -gt 0 ]; then
+    log "Removing switch VLAN 99..."
+    # Get the index of VLAN 99
+    VLAN_INDEX=$(uci show network | grep -B2 "vlan='99'" | grep "switch_vlan\[" | head -1 | sed 's/.*switch_vlan\[\([0-9]*\)\].*/\1/')
+    if [ -n "$VLAN_INDEX" ]; then
+        uci delete network.@switch_vlan[$VLAN_INDEX]
+        log "Deleted switch_vlan[$VLAN_INDEX]"
+    fi
+fi
+
+# Reset WAN to disabled state (State 0)
+uci set network.wan.disabled='1'
+uci set network.wan.auto='0'
+
+uci commit network
+uci commit dhcp
+
+log "Network configuration reset to factory state"
+
+# =============================================================================
+# STEP 3: Reset WiFi Configuration
+# =============================================================================
+
+log "Resetting WiFi configuration..."
+
+# Configure WiFi for captive portal (State 0)
+uci set wireless.radio0.disabled='0'
+uci set wireless.default_radio0.ssid='Router-Setup-Required'
+uci set wireless.default_radio0.encryption='none'
+uci set wireless.default_radio0.disabled='0'
+uci set wireless.default_radio0.network='lan'
+
+# 5GHz if available
+if uci show wireless.radio1 >/dev/null 2>&1; then
+    uci set wireless.radio1.disabled='0'
+    if uci show wireless.default_radio1 >/dev/null 2>&1; then
+        uci set wireless.default_radio1.ssid='Router-Setup-Required-5G'
+        uci set wireless.default_radio1.encryption='none'
+        uci set wireless.default_radio1.disabled='0'
+        uci set wireless.default_radio1.network='lan'
+    fi
+fi
+
+uci commit wireless
+
+log "WiFi configured for captive portal"
+
+# =============================================================================
+# STEP 4: Reset Web Server Configuration
+# =============================================================================
+
+log "Resetting web server configuration..."
+
+# Clear existing listeners
+uci delete uhttpd.main.listen_http 2>/dev/null
+uci delete uhttpd.main.listen_https 2>/dev/null
+
+# Set to listen on all interfaces (State 0)
+uci add_list uhttpd.main.listen_http='0.0.0.0:80'
+uci add_list uhttpd.main.listen_https='0.0.0.0:443'
+
+# Point to provisioning directory
+uci set uhttpd.main.home='/www_provision'
+
+uci commit uhttpd
+
+log "Web server reset to provisioning mode"
+
+# =============================================================================
+# STEP 5: Enable DNS Hijacking (Captive Portal)
+# =============================================================================
+
+log "Enabling DNS hijacking for captive portal..."
+
+# Remove old entries first
+uci del_list dhcp.@dnsmasq[0].address='/#/192.168.2.1' 2>/dev/null
+uci del_list dhcp.@dnsmasq[0].address='/#/192.168.99.1' 2>/dev/null
+
+# Add DNS hijacking for State 0
+uci add_list dhcp.@dnsmasq[0].address='/#/192.168.2.1'
+
+uci commit dhcp
+
+log "DNS hijacking enabled"
+
+# =============================================================================
+# STEP 6: Reset Firewall Rules
+# =============================================================================
+
+log "Resetting firewall rules..."
+
+# Remove management VLAN from firewall
+# Find LAN zone and remove mgmt network
+LAN_ZONE_INDEX=$(uci show firewall | grep "@zone.*name='lan'" | head -1 | sed 's/.*@zone\[\([0-9]*\)\].*/\1/')
+if [ -n "$LAN_ZONE_INDEX" ]; then
+    uci del_list firewall.@zone[$LAN_ZONE_INDEX].network='mgmt' 2>/dev/null
+fi
+
+# Remove custom rules if any
+uci delete firewall.allow_http 2>/dev/null
+uci delete firewall.allow_dns 2>/dev/null
+uci delete firewall.allow_dhcp 2>/dev/null
+
+uci commit firewall
+
+log "Firewall reset to default state"
+
+# =============================================================================
+# STEP 7: Display Success Page
+# =============================================================================
+
+cat << 'HTML_EOF'
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Factory Reset Complete</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
+    background:#fef2f2;
+    min-height:100vh;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding:16px;
+  }
+  .card{
+    background:#fff;
+    border-radius:12px;
+    max-width:420px;
+    width:100%;
+    padding:24px 28px;
+    box-shadow:0 10px 30px rgba(15,23,42,.25);
+  }
+  h1{
+    color:#f97316;
+    font-size:20px;
+    text-align:center;
+    margin-bottom:6px;
+  }
+  .subtitle{
+    text-align:center;
+    color:#6b7280;
+    font-size:13px;
+    margin-bottom:18px;
+  }
+  .list{
+    background:#f9fafb;
+    border-radius:8px;
+    padding:12px 14px;
+    font-size:13px;
+    color:#4b5563;
+    margin-bottom:14px;
+  }
+  .list ul{margin-left:18px;margin-top:4px}
+  .list li{margin:3px 0}
+  .highlight{
+    background:#fffbeb;
+    border-radius:8px;
+    padding:12px 14px;
+    border-left:4px solid #f59e0b;
+    font-size:13px;
+    color:#78350f;
+    margin-bottom:14px;
+  }
+  .label{font-weight:600;color:#111827}
+  .code{
+    font-family:monospace;
+    background:#111827;
+    color:#facc15;
+    padding:2px 6px;
+    border-radius:4px;
+    font-size:12px;
+  }
+  .timer{
+    text-align:center;
+    font-size:12px;
+    color:#6b7280;
+    margin-top:8px;
+  }
+  .button{
+    display:block;
+    margin:18px auto 0;
+    padding:10px 20px;
+    max-width:260px;
+    text-align:center;
+    background:#f97316;
+    color:#fff;
+    text-decoration:none;
+    border-radius:999px;
+    font-size:14px;
+    font-weight:500;
+  }
+  .button:hover{background:#ea580c}
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1>Factory reset complete</h1>
+    <p class="subtitle">The router has been returned to the initial setup state.</p>
+
+    <div class="list">
+      <span class="label">Reset items</span>
+      <ul>
+        <li>Zero‑trust settings and credentials removed</li>
+        <li>Management VLAN disabled</li>
+        <li>WAN turned off</li>
+        <li>Setup Wi‑Fi enabled</li>
+        <li>Setup page restored on LAN</li>
+      </ul>
+    </div>
+
+    <div class="highlight">
+      <span class="label">Connect to setup</span><br>
+      Wi‑Fi: <span class="code">Router-Setup-Required</span> (open)<br>
+      or browse to <span class="code">http://192.168.2.1</span> from a wired device on LAN.
+    </div>
+
+    <p class="timer">
+      Services are restarting. You will be redirected to
+      <span class="code">http://192.168.2.1</span> in
+      <span id="countdown">15</span> seconds.
+    </p>
+
+    <a href="http://192.168.2.1" class="button">Go to setup page</a>
+  </div>
+
+<script>
+(function(){
+  var remaining=15;
+  var el=document.getElementById('countdown');
+  var target='http://192.168.2.1';
+  function tick(){
+    remaining--;
+    if(el) el.textContent=remaining;
+    if(remaining<=0){
+      window.location.href=target;
+      return;
+    }
+    setTimeout(tick,1000);
+  }
+  if(el) el.textContent=remaining;
+  setTimeout(tick,1000);
+})();
+</script>
+</body>
+</html>
+HTML_EOF
+
+# =============================================================================
+# STEP 8: Apply All Changes in Background
+# =============================================================================
+
+(
+    sleep 3
+    
+    log "Background: Applying factory reset configuration..."
+    
+    # Restart network
+    log "Restarting network service..."
+    /etc/init.d/network restart 2>&1 | tee -a "$LOG_FILE"
+    
+    sleep 3
+    
+    # Reload WiFi
+    log "Activating WiFi captive portal..."
+    wifi reload 2>&1 | tee -a "$LOG_FILE"
+    
+    sleep 2
+    
+    # Restart DHCP/DNS
+    log "Restarting DNS/DHCP services..."
+    /etc/init.d/dnsmasq restart 2>&1 | tee -a "$LOG_FILE"
+    
+    sleep 1
+    
+    # Restart firewall
+    log "Restarting firewall..."
+    /etc/init.d/firewall restart 2>&1 | tee -a "$LOG_FILE"
+    
+    sleep 1
+    
+    # Restart web server
+    log "Restarting web server..."
+    /etc/init.d/uhttpd restart 2>&1 | tee -a "$LOG_FILE"
+    
+    log "========================================="
+    log "FACTORY RESET COMPLETE"
+    log "Router returned to State 0 (Untrusted)"
+    log "WiFi captive portal active"
+    log "========================================="
+    
+) >> "$LOG_FILE" 2>&1 &
+
+log "Reset page sent. Background reset sequence initiated."
+exit 0
