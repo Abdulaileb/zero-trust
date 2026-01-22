@@ -330,12 +330,6 @@ If you discover a security vulnerability:
    - Share lessons learned
    - Improve detection
 
-## References
-
-- OpenWrt Security: https://openwrt.org/docs/guide-user/security
-- VLAN Security: https://www.cisco.com/c/en/us/support/docs/lan-switching/8021q/17056-741-4.html
-- Password Hashing: https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html
-- Network Segmentation: https://www.nist.gov/publications/guide-securing-wireless-local-area-networks-wlans
 
 ## Conclusion
 
@@ -344,7 +338,5 @@ Zero-Boot provides a solid foundation for router security through:
 - Authentication requirements
 - Network isolation
 - Audit logging
-
-However, it should be **part of a comprehensive security strategy**, not the only security measure. Implement additional hardening, keep systems updated, and maintain security awareness.
 
 **Remember**: Security is a journey, not a destination.
