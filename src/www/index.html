@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Zero‑Trust Management Console</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+      background-color: #f3f4f6;
+      color: #111827;
+      padding: 20px 10px;
+    }
+
+    .wrap {
+      max-width: 1040px;
+      margin: 0 auto;
+    }
+
+    header {
+      background-color: #ffffff;
+      border-radius: 4px 4px 0 0;
+      border: 1px solid #d1d5db;
+      border-bottom: none;
+      padding: 14px 18px;
+    }
+
+    .header-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    header h1 {
+      font-size: 20px;
+      font-weight: 600;
+    }
+
+    header p {
+      font-size: 12px;
+      color: #6b7280;
+      margin-top: 3px;
+    }
+
+    .header-meta {
+      font-size: 11px;
+      color: #6b7280;
+      text-align: right;
+    }
+
+    .header-meta span + span::before {
+      content: "•";
+      padding: 0 4px;
+      color: #9ca3af;
+    }
+
+    .alert {
+      background-color: #fffbeb;
+      border: 1px solid #facc15;
+      border-top: none;
+      color: #92400e;
+      padding: 8px 12px;
+      font-size: 12px;
+      border-radius: 0 0 4px 4px;
+      margin-bottom: 14px;
+    }
+
+    .alert strong {
+      font-weight: 600;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1.6fr 1.1fr;
+      gap: 12px;
+    }
+
+    @media (max-width: 840px) {
+      .grid { grid-template-columns: 1fr; }
+    }
+
+    .panel {
+      background-color: #ffffff;
+      border: 1px solid #d1d5db;
+      border-radius: 4px;
+      padding: 14px 16px;
+    }
+
+    .panel h2 {
+      font-size: 14px;
+      margin-bottom: 4px;
+      font-weight: 600;
+    }
+
+    .panel-sub {
+      font-size: 12px;
+      color: #6b7280;
+      margin-bottom: 10px;
+    }
+
+    .status-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    @media (max-width: 520px) {
+      .status-grid { grid-template-columns: 1fr; }
+    }
+
+    .status-item {
+      background-color: #f9fafb;
+      border: 1px solid #e5e7eb;
+      border-radius: 3px;
+      padding: 8px 10px;
+      font-size: 12px;
+    }
+
+    .status-label {
+      color: #6b7280;
+      margin-bottom: 2px;
+    }
+
+    .status-value {
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .dot-ok {
+      width: 8px;
+      height: 8px;
+      border-radius: 999px;
+      background-color: #16a34a;
+    }
+
+    .dot-bad {
+      width: 8px;
+      height: 8px;
+      border-radius: 999px;
+      background-color: #dc2626;
+    }
+
+    .info-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+      margin-top: 6px;
+    }
+
+    .info-table th,
+    .info-table td {
+      border: 1px solid #e5e7eb;
+      padding: 6px 8px;
+      text-align: left;
+    }
+
+    .info-table th {
+      background-color: #f9fafb;
+      font-weight: 500;
+      width: 38%;
+      color: #4b5563;
+    }
+
+    .divider {
+      border-top: 1px solid #e5e7eb;
+      margin: 12px 0 10px;
+    }
+
+    .btn-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 6px;
+    }
+
+    .btn {
+      border-radius: 3px;
+      font-size: 12px;
+      padding: 7px 14px;
+      border: 1px solid #9ca3af;
+      background-color: #f3f4f6;
+      cursor: pointer;
+      text-align: center;
+      text-decoration: none;
+      color: #111827;
+      min-width: 120px;
+    }
+
+    .btn-primary {
+      background-color: #2563eb;
+      border-color: #1d4ed8;
+      color: #ffffff;
+    }
+
+    .btn-primary:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    .btn-danger {
+      border-color: #fca5a5;
+      color: #b91c1c;
+      background-color: #ffffff;
+    }
+
+    .hint {
+      margin-top: 6px;
+      font-size: 11px;
+      color: #6b7280;
+      display: none;
+    }
+
+    .sys-line {
+      font-size: 12px;
+      margin-bottom: 4px;
+    }
+
+    .sys-line strong {
+      font-weight: 600;
+    }
+
+    .sys-note {
+      font-size: 11px;
+      color: #6b7280;
+      margin-top: 8px;
+      line-height: 1.4;
+    }
+
+    .spinner {
+      display: inline-block;
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      border: 2px solid rgba(255,255,255,0.5);
+      border-top-color: #ffffff;
+      margin-left: 6px;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div class="header-top">
+        <div>
+          <h1>Zero‑Trust Management Console</h1>
+          <p>Router boot protection, WAN control, and link to the LuCI configuration interface.</p>
+        </div>
+        <div class="header-meta">
+          <span>Zero‑Trust Boot v2.0</span>
+          <span>Mgmt VLAN 99</span>
+          <span>192.168.99.1</span>
+        </div>
+      </div>
+    </header>
+
+    <div class="alert" id="wanAlert">
+      <strong>Security notice:</strong>
+      WAN interface is currently disabled as part of the zero‑trust boot process. Enable WAN only afte.
+    </div>
+
+    <div class="grid">
+      <!-- Left: status and control -->
+      <section class="panel">
+        <h2>Security status</h2>
+        <div class="panel-sub">Current protection state</div>
+
+        <div class="status-grid">
+          <div class="status-item">
+            <div class="status-label">Boot protection</div>
+            <div class="status-value">
+              <span class="dot-ok"></span> Active
+            </div>
+          </div>
+          <div class="status-item">
+            <div class="status-label">Credentials</div>
+            <div class="status-value">
+              <span class="dot-ok"></span> Argon2id
+            </div>
+          </div>
+          <div class="status-item">
+            <div class="status-label">Management VLAN</div>
+            <div class="status-value">
+              <span class="dot-ok"></span> VLAN 99
+            </div>
+          </div>
+          <div class="status-item">
+            <div class="status-label">WAN status</div>
+            <div class="status-value" id="wanStatusText">
+              <span class="dot-bad"></span> Disabled
+            </div>
+          </div>
+        </div>
+
+        <table class="info-table">
+          <tr>
+            <th>Management IP</th>
+            <td>192.168.99.1</td>
+          </tr>
+          <tr>
+            <th>Standard LAN</th>
+            <td>192.168.2.1</td>
+          </tr>
+          <tr>
+            <th>Security level</th>
+            <td>High (locked‑by‑default)</td>
+          </tr>
+        </table>
+
+        <div class="divider"></div>
+
+        <h2 style="font-size:13px;margin-bottom:4px;">Network control</h2>
+        <div class="panel-sub" style="margin-bottom:6px;">
+          Use these controls to enable or disable WAN, or open the full LuCI interface. Factory reset .
+        </div>
+
+        <div class="btn-row">
+          <form id="wanActivateForm">
+            <button type="submit" class="btn btn-primary" id="btnActivateWan">
+              <span class="btn-text">Activate WAN</span>
+              <span class="spinner" style="display:none;"></span>
+            </button>
+          </form>
+
+          <form id="wanDeactivateForm">
+            <button type="submit" class="btn" id="btnDeactivateWan">
+              Deactivate WAN
+            </button>
+          </form>
+
+          <a href="/cgi-bin/luci" class="btn">Open LuCI</a>
+
+          <button type="button" class="btn btn-danger" onclick="showResetConfirm()">
+            Factory reset
+          </button>
+        </div>
+
+        <p class="hint" id="wanHint"></p>
+      </section>
+
+      <!-- Right: system information -->
+      <section class="panel">
+        <h2>System information</h2>
+        <div class="panel-sub">Protocol and management network</div>
+
+        <p class="sys-line"><strong>Protocol:</strong> Zero‑Trust Boot v2.0</p>
+        <p class="sys-line"><strong>Hash algorithm:</strong> Argon2id (memory‑hard)</p>
+        <p class="sys-line"><strong>Management network:</strong> VLAN 99 (192.168.99.0/24)</p>
+        <p class="sys-line"><strong>Supervisor:</strong> Prof. Peter Schartner</p>
+
+        <div class="divider"></div>
+
+        <p class="sys-note">
+          This console exposes a minimal management surface: WAN activation, basic status, and a link
+          to LuCI for detailed configuration. Routine operation should be performed from LuCI or
+          command‑line once the router is unlocked.
+        </p>
+      </section>
+    </div>
+  </div>
+
+  <script>
+    function showResetConfirm() {
+      if (confirm("Factory reset will erase all configuration and require re-provisioning.\n\nContinue"))
+      {
+        window.location.href = "/cgi-bin/custom_reset";
+      }
+    }
+
+    const wanStatusText       = document.getElementById("wanStatusText");
+    const wanAlert            = document.getElementById("wanAlert");
+    const wanForm             = document.getElementById("wanActivateForm");
+    const wanButton           = document.getElementById("btnActivateWan");
+    const wanTextSpan         = wanButton ? wanButton.querySelector(".btn-text") : null;
+    const wanSpinner          = wanButton ? wanButton.querySelector(".spinner") : null;
+    const wanHint             = document.getElementById("wanHint");
+    const wanDeactivateForm   = document.getElementById("wanDeactivateForm");
+    const wanDeactivateButton = document.getElementById("btnDeactivateWan");
+
+    function setWanButtonLoading(loading) {
+      if (!wanButton || !wanTextSpan || !wanSpinner) return;
+      wanButton.disabled = loading;
+      wanTextSpan.style.display = loading ? "none" : "inline";
+      wanSpinner.style.display = loading ? "inline-block" : "none";
+    }
+
+    function updateWanVisual(status) {
+      if (!wanStatusText) return;
+      if (status === "UP") {
+        wanStatusText.innerHTML = '<span class="dot-ok"></span> Active';
+        if (wanAlert) wanAlert.style.display = "none";
+      } else {
+        wanStatusText.innerHTML = '<span class="dot-bad"></span> Disabled';
+        if (wanAlert) wanAlert.style.display = "block";
+      }
+    }
+
+    function checkWAN() {
+      fetch("/cgi-bin/wan_status")
+        .then(r => r.text())
+        .then(t => {
+          const status = t.trim().toUpperCase() === "UP" ? "UP" : "DOWN";
+          updateWanVisual(status);
+        })
+        .catch(() => updateWanVisual("DOWN"));
+    }
+
+    if (wanForm) {
+      wanForm.addEventListener("submit", function (e) {
+        e.preventDefault();
+        setWanButtonLoading(true);
+        if (wanHint) {
+          wanHint.style.display = "block";
+          wanHint.textContent = "Activating WAN…";
+          wanHint.style.color = "#4b5563";
+        }
+
+        fetch("/cgi-bin/activate_wan", { method: "POST" })
+          .then(() => {
+            if (wanHint) {
+              wanHint.textContent = "Command sent. Waiting for WAN to come online…";
+            }
+            const burst = setInterval(checkWAN, 2000);
+            setTimeout(() => clearInterval(burst), 20000);
+          })
+          .catch(() => {
+            if (wanHint) {
+              wanHint.textContent = "Activation failed. Check system logs.";
+              wanHint.style.color = "#b91c1c";
+            }
+          })
+          .finally(() => {
+            setTimeout(() => setWanButtonLoading(false), 4000);
+          });
+      });
+    }
+
+    if (wanDeactivateForm && wanDeactivateButton) {
+      wanDeactivateForm.addEventListener("submit", function (e) {
+        e.preventDefault();
+        wanDeactivateButton.disabled = true;
+        if (wanHint) {
+          wanHint.style.display = "block";
+          wanHint.textContent = "Deactivating WAN…";
+          wanHint.style.color = "#4b5563";
+        }
+
+        fetch("/cgi-bin/deactivate_wan", { method: "POST" })
+          .then(() => {
+            if (wanHint) {
+              wanHint.textContent = "Command sent. Waiting for WAN to go down…";
+            }
+            const burst = setInterval(checkWAN, 2000);
+            setTimeout(() => clearInterval(burst), 20000);
+          })
+          .catch(() => {
+            if (wanHint) {
+              wanHint.textContent = "Deactivation failed. Check system logs.";
+              wanHint.style.color = "#b91c1c";
+            }
+          })
+          .finally(() => {
+            setTimeout(() => { wanDeactivateButton.disabled = false; }, 4000);
+          });
+      });
+    }
+
+    checkWAN();
+    setInterval(checkWAN, 5000);
+  </script>
+</body>
+</html>
