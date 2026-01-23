@@ -1,4 +1,3 @@
-root@zeroboot:~# cat reset_lab.sh
 #!/bin/bash
 # 0_reset_lab.sh - CLEAN SLATE
 echo "Clearing up the Virtual Lab "
@@ -17,4 +16,3 @@ echo "Disabling Bridge VLAN Filtering..."
 ip link set dev br-lan type bridge vlan_filtering 0
 
 echo "Lab is Clean. Ready for Demo. "
-root@zeroboot:~#

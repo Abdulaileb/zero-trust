@@ -18,8 +18,8 @@ COPY ./src/boot-enforcer/rc.local.sh /etc/config
 COPY ./src/www_provision/cgi-bin/ /www_provision/cgi-bin
 COPY ./src/www /src/www_trusted
 
-RUN Chmod +x /www_provision/cgi-bin/setup.sh
-RUN Chmod +x /etc/config
+RUN chmod +x /www_provision/cgi-bin/setup.sh
+RUN chmod +x /etc/config
 
 EXPOSE 80 443 8080 99
 

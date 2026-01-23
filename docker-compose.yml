@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  router-sim:
+    build: .
+    container_name: zeroboot_router
+    ports:
+      - "8080:80" # Accessing the Provisioning Page
+      - "8099:99" # Accessing the Management VLAN (Post-Setup)
+    volumes:
+      # We mount /etc/config to persist the state even if the container restarts
+      - ./config:/etc/config
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    networks:
+      - zeroboot_net
+
+networks:
+  zeroboot_net:
+    driver: bridge
