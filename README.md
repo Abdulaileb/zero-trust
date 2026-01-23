@@ -2,6 +2,10 @@
 
 This project provides a portable Docker-based **Digital Twin** of a secure Zero-Trust router environment. It mimics the "Fail-Closed" security logic and cryptographic provisioning flow used in high-security GCP/Cloud deployments.
 
+## 🏗️ Architecture Flow
+
+![Architecture Flow](docs/images/architecture_flow.png)
+
 ## Cloud-to-Docker Transition
 
 While the cloud environment uses heavy VPCs and multiple VM interfaces, this Docker implementation focuses on the **Security Logic Engine**:
@@ -35,6 +39,8 @@ Ensure you have Docker and Docker Compose installed.
     - Status: **TRUSTED**
     - Management Console is now active.
 
+![Zero-Trust Management Dashboard](docs/images/dashboard_preview.png)
+
 ## Project Structure
 
 - `Dockerfile`: Builds the "Router-in-a-Box" environment with Python, Nginx, and required libraries.
@@ -45,3 +51,5 @@ Ensure you have Docker and Docker Compose installed.
 
 ## Purpose for Partners
 This environment proves **"Cooperative Readiness"**. It allows partners to test the security logic in a modular, containerized testbed without needing access to the full GCP production environment.
+
+For a detailed comparative analysis and attack scenarios, see the [Security Argument & Proof](docs/SECURITY_PROOF.md).
