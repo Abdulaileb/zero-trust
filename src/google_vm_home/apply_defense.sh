@@ -1,4 +1,3 @@
-root@zeroboot:~# cat apply_defense.sh
 #!/bin/bash
 # 3_apply_defense.sh - SECURE THE BRIDGE
 #echo "--- Applying VLAN Filtering (ACLs) ---"
@@ -24,4 +23,3 @@ bridge vlan add dev br-lan vid 1 pvid untagged self
 bridge vlan add dev br-lan vid 99 self
 
 echo " DONE with the ACLs Applied. Re-testing Attack... "
-root@zeroboot:~#

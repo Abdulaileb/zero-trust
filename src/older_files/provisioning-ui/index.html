@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Zero-Trust Router Setup</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <div class="lock-icon">🔒</div>
+        <h1>Router Security Initialization</h1>
+        <p class="subtitle">Zero-Trust Boot Protocol Active</p>
+        
+        <div class="alert">
+            <div class="alert-title">⚠️ Internet Access Disabled</div>
+            <div class="alert-text">
+                For your security, internet connectivity is disabled until 
+                you complete the setup process. This prevents exploitation 
+                during the vulnerable boot phase.
+            </div>
+        </div>
+        
+        <form id="setupForm" action="/cgi-bin/setup" method="POST">
+            <label for="username">Administrator Username</label>
+            <input 
+                type="text" 
+                id="username" 
+                name="username" 
+                required 
+                minlength="3"
+                placeholder="Minimum 3 characters"
+            />
+            
+            <label for="password">Master Password</label>
+            <input 
+                type="password" 
+                id="password" 
+                name="password" 
+                required 
+                minlength="12"
+                placeholder="Minimum 12 characters"
+            />
+            <div class="password-strength">
+                <div id="strengthBar" class="strength-bar"></div>
+            </div>
+            <div id="strengthText" class="strength-text"></div>
+            
+            <label for="password_confirm">Confirm Password</label>
+            <input 
+                type="password" 
+                id="password_confirm" 
+                name="password_confirm" 
+                required 
+                minlength="12"
+                placeholder="Re-enter password"
+            />
+            
+            <button type="submit">Secure & Initialize</button>
+        </form>
+        
+        <div id="message" class="message"></div>
+        
+        <div class="footer">
+            <p>Zero-Trust Boot Protocol v1.0</p>
+            <p>Supervised by Prof. Peter Schartner, University of Klagenfurt</p>
+        </div>
+    </div>
+    
+    <script>
+        const passwordInput = document.getElementById('password');
+        const strengthBar = document.getElementById('strengthBar');
+        const strengthText = document.getElementById('strengthText');
+        const form = document.getElementById('setupForm');
+        const messageDiv = document.getElementById('message');
+        
+        // Real-time password strength
+        passwordInput.addEventListener('input', function() {
+            const password = this.value;
+            const strength = calculateStrength(password);
+            
+            updateStrengthIndicator(strength);
+        });
+        
+        function calculateStrength(password) {
+            let score = 0;
+            
+            if (password.length >= 12) score += 25;
+            if (password.length >= 16) score += 15;
+            if (/[a-z]/.test(password)) score += 15;
+            if (/[A-Z]/.test(password)) score += 15;
+            if (/[0-9]/.test(password)) score += 15;
+            if (/[^a-zA-Z0-9]/.test(password)) score += 15;
+            
+            return Math.min(score, 100);
+        }
+        
+        function updateStrengthIndicator(strength) {
+            strengthBar.style.width = strength + '%';
+            
+            if (strength < 40) {
+                strengthBar.className = 'strength-bar weak';
+                strengthText.textContent = 'Weak - Add more characters and variety';
+                strengthText.className = 'strength-text weak';
+            } else if (strength < 70) {
+                strengthBar.className = 'strength-bar medium';
+                strengthText.textContent = 'Medium - Consider adding symbols';
+                strengthText.className = 'strength-text medium';
+            } else {
+                strengthBar.className = 'strength-bar strong';
+                strengthText.textContent = 'Strong password ✓';
+                strengthText.className = 'strength-text strong';
+            }
+        }
+        
+        // Form validation
+        form.addEventListener('submit', function(e) {
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            const confirm = document.getElementById('password_confirm').value;
+            
+            // Check password match
+            if (password !== confirm) {
+                e.preventDefault();
+                showMessage('Passwords do not match', 'error');
+                return;
+            }
+            
+            // Check complexity
+            const strength = calculateStrength(password);
+            if (strength < 70) {
+                e.preventDefault();
+                showMessage('Password is too weak. Please create a stronger password.', 'error');
+                return;
+            }
+            
+            showMessage('Provisioning router...', 'info');
+        });
+        
+        function showMessage(text, type) {
+            messageDiv.textContent = text;
+            messageDiv.className = 'message ' + type;
+            messageDiv.style.display = 'block';
+        }
+    </script>
+</body>
+</html>

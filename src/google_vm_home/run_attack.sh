@@ -1,4 +1,3 @@
-root@zeroboot:~# cat run_attack.sh
 #!/bin/bash
 # 2_run_attack.sh - FIXED
 
@@ -22,4 +21,3 @@ ip netns exec attacker_pc ping -c 3 192.168.99.1
 
 echo "INTERPRETATION:"
 echo " - with the response '64 bytes from...', the Vulnerability is ACTIVE."
-root@zeroboot:~#

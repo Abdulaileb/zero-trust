@@ -1,4 +1,3 @@
-root@zeroboot:~# cat setup_ns.sh
 #!/bin/bash
 # setup_ns.sh - Create namespaces and connect them to br-lan
 
@@ -34,4 +33,3 @@ ip netns exec attacker_pc ip route add default via 192.168.2.1
 
 echo "User IP: 192.168.2.100 (Namespace: user_pc)"
 echo "Attacker IP: 192.168.2.200 (Namespace: attacker_pc)"
-root@zeroboot:~#
