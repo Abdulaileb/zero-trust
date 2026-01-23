@@ -19,20 +19,20 @@ if [ ! -f "/etc/config/zero_trust_complete" ]; then
 fi
 
 # Mark WAN disabled in config
-log "Disabling WAN interface in UCI..."
-uci set network.wan.disabled='1'
-uci commit network
+# log "Disabling WAN interface in UCI..."
+# uci set network.wan.disabled='1'
+# uci commit network
 
 # Immediate response so UI does not hang
 echo '{"status":"deactivating"}'
 
 # Background shutdown
-(
-    log "Background: ifdown wan..."
-    /sbin/ifdown wan 2>>"$LOG_FILE"
-    ip link set eth1 down 2>>"$LOG_FILE"
-    log "Background: WAN deactivation complete"
-) &
+# (
+#     log "Background: ifdown wan..."
+#     /sbin/ifdown wan 2>>"$LOG_FILE"
+#     ip link set eth1 down 2>>"$LOG_FILE"
+#     log "Background: WAN deactivation complete"
+# ) &
 
 log "=== Response sent, deactivation in background ==="
 exit 0

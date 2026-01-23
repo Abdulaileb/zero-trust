@@ -10,6 +10,7 @@ PORT = 5000
 HASHER = PasswordHasher(time_cost=2, memory_cost=16384, parallelism=2)
 CONFIG_PATH = "/etc/config/zero_trust_complete"
 CREDENTIALS_PATH = "/etc/config/zero_trust_credentials"
+WAN_STATUS_PATH = "/tmp/wan_status"
 
 class SetupHandler(http.server.BaseHTTPRequestHandler):
     def do_POST(self):
@@ -79,6 +80,41 @@ class SetupHandler(http.server.BaseHTTPRequestHandler):
             </html>
             """
             self.wfile.write(success_html.encode('utf-8'))
+        elif self.path == '/cgi-bin/activate_wan':
+            with open(WAN_STATUS_PATH, "w") as f:
+                f.write("UP")
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"OK")
+        elif self.path == '/cgi-bin/deactivate_wan':
+            with open(WAN_STATUS_PATH, "w") as f:
+                f.write("DOWN")
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"OK")
+        elif self.path == '/cgi-bin/custom_reset':
+            if os.path.exists(CONFIG_PATH):
+                os.remove(CONFIG_PATH)
+            if os.path.exists(CREDENTIALS_PATH):
+                os.remove(CREDENTIALS_PATH)
+            if os.path.exists(WAN_STATUS_PATH):
+                os.remove(WAN_STATUS_PATH)
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"OK")
+        else:
+            self.send_error(404)
+
+    def do_GET(self):
+        if self.path == '/cgi-bin/wan_status':
+            status = "DOWN"
+            if os.path.exists(WAN_STATUS_PATH):
+                with open(WAN_STATUS_PATH, "r") as f:
+                    status = f.read().strip()
+            self.send_response(200)
+            self.send_header('Content-type', 'text/plain')
+            self.end_headers()
+            self.wfile.write(status.encode('utf-8'))
         else:
             self.send_error(404)
 
