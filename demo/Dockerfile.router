@@ -1,0 +1,27 @@
+FROM alpine:latest
+
+# Install necessary packages
+RUN apk add --no-cache \
+    bash \
+    busybox-extras \
+    python3 \
+    py3-pip \
+    curl \
+    iptables \
+    openrc
+
+# Install Argon2
+RUN pip3 install argon2-cffi
+
+# Create directory structure
+RUN mkdir -p /opt/zero-trust/www_provision \
+             /opt/zero-trust/boot-enforcer \
+             /opt/zero-trust/crypto-engine \
+             /opt/zero-trust/cgi-bin \
+             /etc/config
+
+# Expose HTTP port
+EXPOSE 80
+
+# Keep container running
+CMD ["tail", "-f", "/dev/null"]

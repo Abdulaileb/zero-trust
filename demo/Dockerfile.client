@@ -1,0 +1,11 @@
+FROM alpine:latest
+
+# Install testing tools
+RUN apk add --no-cache \
+    bash \
+    curl \
+    nmap \
+    netcat-openbsd
+
+# Keep container running
+CMD ["tail", "-f", "/dev/null"]

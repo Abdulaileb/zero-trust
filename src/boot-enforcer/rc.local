@@ -1,0 +1,41 @@
+#!/bin/sh -e
+# Zero-Trust Boot Enforcer
+# Executes on every boot to enforce security state
+
+LOG_FILE="/tmp/zero_trust_boot.log"
+FLAG_FILE="/etc/config/zero_trust_complete"
+
+log_message() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | tee -a "$LOG_FILE"
+}
+
+log_message "=== Zero-Trust Boot Enforcer Started ==="
+
+# Check if system has been provisioned
+if [ ! -f "$FLAG_FILE" ]; then
+    # STATE 0: UNTRUSTED - System has never been secured
+    log_message "ALERT: System in UNTRUSTED state (first boot or factory reset)"
+    
+    # Disable WAN interface (no internet access)
+    log_message "Disabling WAN interface..."
+    # In real OpenWrt: ifdown wan; uci set network.wan.disabled='1'
+    # In demo: This is simulated
+    
+    # Point web server to provisioning interface
+    log_message "Loading provisioning interface..."
+    # In real OpenWrt: uci set uhttpd.main.home='/www_provision'
+    # In demo: Docker CMD handles this
+    
+    log_message "System LOCKED. Awaiting cryptographic provisioning."
+    
+else
+    # STATE 1: TRUSTED - System has been provisioned
+    log_message "Trust flag verified. System in TRUSTED state."
+    
+    # Normal boot continues
+    # In real OpenWrt: uci set uhttpd.main.home='/www'
+    log_message "Loading secure management console..."
+fi
+
+log_message "=== Boot Enforcer Complete ==="
+exit 0

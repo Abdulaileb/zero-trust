@@ -1,0 +1,47 @@
+version: '3.8'
+
+services:
+  # Simulated Router (OpenWrt)
+  router:
+    build:
+      context: .
+      dockerfile: Dockerfile.router
+    container_name: ztbp_router
+    hostname: router
+    networks:
+      lan:
+        ipv4_address: 192.168.2.1
+    ports:
+      - "8080:80"       # Web interface
+    privileged: true
+    environment:
+      - STATE=0         # Start in untrusted state
+    volumes:
+      - ../src:/opt/zero-trust
+      - router_data:/etc/config
+    command: /bin/sh -c "/opt/zero-trust/boot-enforcer/rc.local && httpd -f -p 80 -h /opt/zero-trust/www_provision"
+
+  # Client Device (simulates user)
+  client:
+    build:
+      context: .
+      dockerfile: Dockerfile.client
+    container_name: ztbp_client
+    hostname: client
+    networks:
+      lan:
+        ipv4_address: 192.168.2.100
+    depends_on:
+      - router
+    stdin_open: true
+    tty: true
+
+networks:
+  lan:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 192.168.2.0/24
+
+volumes:
+  router_data:
